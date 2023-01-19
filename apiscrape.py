@@ -1,13 +1,19 @@
+from hurry.filesize import size
 import pandas as pd
 import requests
 import json
+import os
+from datetime import datetime
+from dotenv import load_dotenv
+import time
 
-apikey="" #enter api key here
-domain="" #enter domain name here like http://jackett.example.com or http://120.120.120.120:9117
+load_dotenv()
 
+JACKETT_API_KEY = os.environ.get('JACKETT_API_KEY')
+JACKETT_URL = os.environ.get('JACKETT_URL')
 
 def indexerList(flag):
-    r = requests.get(domain+"/api/v2.0/indexers/?apikey="+apikey)
+    r = requests.get(JACKETT_URL + "/api/v2.0/indexers/?apikey=" + JACKETT_API_KEY)
     print(r)
     j = r.json()
     catList = []
@@ -34,57 +40,124 @@ def indexerList(flag):
         return [("error","error")]
 
 
-def searchQuery(searchTerm,categoryList,indexerList):
+def searchQuery(searchTerm, categoryList, indexerList):
     print(searchTerm)
     print(categoryList)
     print(indexerList)
     categoryList=",".join(categoryList)
     indexerList=",".join(indexerList)
+
     if(categoryList=="" and indexerList==""):
         r = requests.get(
-            domain + "/api/v2.0/indexers/all/results?apikey=" + apikey + "&Query=" + searchTerm)
+            JACKETT_URL + "/api/v2.0/indexers/all/results?apikey=" + JACKETT_API_KEY + "&Query=" + searchTerm)
     elif(categoryList==""):
         r = requests.get(
-            domain + "/api/v2.0/indexers/all/results?apikey=" + apikey + "&Query=" + searchTerm + "&Tracker[]=" + indexerList)
+            JACKETT_URL + "/api/v2.0/indexers/all/results?apikey=" + JACKETT_API_KEY + "&Query=" + searchTerm + "&Tracker[]=" + indexerList)
     elif(indexerList==""):
         r = requests.get(
-            domain + "/api/v2.0/indexers/all/results?apikey=" + apikey + "&Query=" + searchTerm + "&Category[]=" + categoryList)
+            JACKETT_URL + "/api/v2.0/indexers/all/results?apikey=" + JACKETT_API_KEY + "&Query=" + searchTerm + "&Category[]=" + categoryList)
     else:
         r = requests.get(
-            domain + "/api/v2.0/indexers/all/results?apikey=" + apikey + "&Query=" + searchTerm + "&Category[]=" + categoryList + "&Tracker[]="
+            JACKETT_URL + "/api/v2.0/indexers/all/results?apikey=" + JACKETT_API_KEY + "&Query=" + searchTerm + "&Category[]=" + categoryList + "&Tracker[]="
             + indexerList)
-
+    
     j=json.loads(r.text)
     #(j['Results'][0])
     resultsdf=pd.json_normalize(j['Results'])
     indexerdf=pd.json_normalize(j['Indexers'])
     if resultsdf.empty:
-        return("Empty","No results found")
+        return(resultsdf, "No results found")
+    resultsdf.drop(
+        [
+            'FirstSeen',
+            'BlackholeLink',
+            'TrackerId',
+            'TrackerType',
+            'Guid',
+            'Category',
+            'Grabs',
+            'Description',
+            'RageID',
+            'TVDBId',
+            'Imdb',
+            'TMDb',
+            'Author',
+            'BookTitle',
+            'Poster',
+            'MinimumRatio',
+            'MinimumSeedTime',
+            'DownloadVolumeFactor',
+            'UploadVolumeFactor',
+            'Gain',
+            'Files',
+            'TVMazeId',
+            'TraktId', 
+            'DoubanId',
+            'Genres', 
+            'Year', 
+            'Publisher', 
+            'Artist', 
+            'Album', 
+            'Label', 
+            'Track'
+        ],
+        axis=1,
+        inplace=True
+    )
 
-    resultsdf.drop(['FirstSeen','BlackholeLink','TrackerId','Guid','Category','Grabs','Description','RageID','TVDBId','Imdb','TMDb','Author','BookTitle','Poster','MinimumRatio','MinimumSeedTime','DownloadVolumeFactor','UploadVolumeFactor','Gain'],axis=1,inplace=True)
-
-    #pd.set_option("display.max_rows", None, "display.max_columns", None)
+    resultsdf.insert(3, 'Readable Size', None)
+    resultsdf = resultsdf[
+        [
+            'Title',
+            'CategoryDesc', 
+            'Tracker',
+            'PublishDate',
+            'Size',
+            'Readable Size',
+            'Seeders', 
+            'Peers', 
+            'Link', 
+            'Details',
+            'InfoHash', 
+            'MagnetUri'
+        ]
+    ]
     for idx in resultsdf.index:
-        torrenturl=resultsdf._get_value(idx,'Link')
-        infohash = resultsdf._get_value(idx, 'InfoHash')
-        magneturi = resultsdf._get_value(idx,'MagnetUri')
+
+        readable_size = resultsdf.at[idx, 'Size']
+        resultsdf.at[idx, 'Readable Size'] = size(int(readable_size))
+
+        torrenturl = resultsdf.at[idx, 'Link']
+        infohash = resultsdf.at[idx, 'InfoHash']
+        magneturi = resultsdf.at[idx, 'MagnetUri']
+
         if torrenturl is None:
             if magneturi is not None:
-                resultsdf._set_value(idx,'Link',magneturi)
+                resultsdf.at[idx, 'Link'] = magneturi
             elif infohash is not None:
-                resultsdf._set_value(idx,'Link',"magnet:?xt=urn:btih:"+infohash.lower())
-        torrenturl = resultsdf._get_value(idx, 'Link')
-        resultsdf._set_value(idx,'Details',"<a href="+resultsdf._get_value(idx,'Details')+">Link</a>")
-        resultsdf._set_value(idx,'Link',"<a href="+torrenturl+">Link</a>")
-    resultsdf.drop(['MagnetUri','InfoHash'],axis=1,inplace=True)
+                resultsdf.at[idx, 'Link'] = "magnet:?xt=urn:btih:" + infohash.lower()
+
+        torrenturl = resultsdf.at[idx, 'Link']
+        resultsdf.at[idx, 'Details'] = "<a href=" + resultsdf.at[idx, 'Details'] + ">Link</a>"
+        resultsdf.at[idx, 'Link'] = "<a href=" + torrenturl + ">Link</a>"
+        resultsdf.at[idx, 'PublishDate'] = datetime.fromisoformat(resultsdf.at[idx, 'PublishDate']).date()
+    resultsdf.drop(
+        ['MagnetUri','InfoHash'],
+        axis=1,
+        inplace=True
+    )
 
     statusString=""
     for x in indexerdf.itertuples():
-        if x.Status==2:
-            statusString=statusString + x.Name + "(" + str(x.Results) + "), "
-        if x.Status==1:
-            statusString = statusString + x.Name + "('Error'), "
+        # x: <class 'pandas.core.frame.Pandas'>
+        # Pandas(Index=0, ID='rutracker', Name='RuTracker', Status=2, Results=50, Error=None) 
 
+        if x.Status == 2:
+            statusString += f"{x.Name}: {x.Results} results"
+        if x.Status == 1:
+            statusString += f"{x.Name}: Error: {x.Error}"
 
     statusString = statusString.rstrip(', ')
+
+
     return(resultsdf, statusString)

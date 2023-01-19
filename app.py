@@ -19,12 +19,30 @@ class SearchForm(FlaskForm):
 def searchform():
     form=SearchForm()
     if form.is_submitted():
-        df=apiscrape.searchQuery(form.searchTerm.data,form.categoryList.data,form.indexerList.data)
-        if df[0] is not "Empty":
-            return render_template('search.html', form=form,
-                                   results=df[0].to_html(index=False, escape=False, table_id="searchOutput",
-                                                         classes="table table-striped", border=0), indexerstatus=df[1])
+        df=apiscrape.searchQuery(
+            form.searchTerm.data,
+            form.categoryList.data,
+            form.indexerList.data
+        )
+        if not df[0].empty:
+            return render_template(
+                'search.html', 
+                form=form,
+                results=df[0].to_html(
+                    index=False, 
+                    escape=False, 
+                    table_id="searchOutput",
+                    classes="table-hover table", 
+                    border=0
+                ), 
+                indexerstatus=df[1]
+            )
         return render_template('search.html',form=form,results="No results found")
     return render_template('search.html',form=form)
+
+
 if __name__=='__main__':
-    app.run(host=host)
+    app.run(
+        host=host,
+        debug=True
+    )
