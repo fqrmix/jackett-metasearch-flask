@@ -133,13 +133,15 @@ def searchQuery(searchTerm, categoryList, indexerList):
 
         if torrenturl is None:
             if magneturi is not None:
-                resultsdf.at[idx, 'Link'] = magneturi
+                resultsdf.at[idx, 'Link'] = "<a href=" + magneturi + ">Link</a>"
             elif infohash is not None:
-                resultsdf.at[idx, 'Link'] = "magnet:?xt=urn:btih:" + infohash.lower()
+                resultsdf.at[idx, 'Link'] = "<a href=\"magnet:?xt=urn:btih:" + infohash.lower() + ">Link</a>"
+        else:
+            torrenturl = requests.get(torrenturl)
+            torrenturl = torrenturl.text
+            resultsdf.at[idx, 'Link'] = "<a href=" + torrenturl + ">Link</a>"
 
-        torrenturl = resultsdf.at[idx, 'Link']
         resultsdf.at[idx, 'Details'] = "<a href=" + resultsdf.at[idx, 'Details'] + ">Link</a>"
-        resultsdf.at[idx, 'Link'] = "<a href=" + torrenturl + ">Link</a>"
         resultsdf.at[idx, 'PublishDate'] = datetime.fromisoformat(resultsdf.at[idx, 'PublishDate']).date()
     resultsdf.drop(
         ['MagnetUri','InfoHash'],
